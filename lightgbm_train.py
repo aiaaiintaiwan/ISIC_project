@@ -13,35 +13,16 @@ import lightgbm as lgb
 from sklearn.model_selection import GroupKFold, StratifiedKFold, KFold
 import random
 
-def predict(X, df_model, mode='best_mean'):
-    if mode == 'best_mean':
+def predict(X, df_model, num_model=1):
+    if num_model <= len(df_model):
         y_preds = []
-        for i in range(5):
-            y_preds.append(df_model.loc[0, f'model_{i}'].predict(X))
+        for num_m in range(num_model):
+            for i in range(5):
+                y_preds.append(df_model.loc[num_m, f'model_{i}'].predict(X))
         y_preds = np.mean(np.array(y_preds), axis=0)
-    elif mode == 'ensemble_mean':
-        y_preds = []
-        for i in df_model.index:
-            for j in range(5):
-                y_preds.append(df_model.loc[i, f'model_{j}'].predict(X))
-        y_preds = np.mean(np.array(y_preds), axis=0)
-    elif mode == 'weighted_ensemble_mean':
-        y_preds = []
-#         model_weight = df_model['average_mcc'].apply(lambda a: a/df_model['average_mcc'].sum())
-        model_weight = []
-        for i in df_model.index:
-            model_weight.append(1 + np.log10(df_model.shape[0] - i + 1))
-        print(model_weight[:10])
-        for i in df_model.index:
-            for j in range(5):
-                y_preds.append(
-                    df_model.loc[i, f'model_{j}'].predict(X) *
-                    model_weight[i]
-                )
-        y_preds = np.array(y_preds)
-        y_preds = np.mean(y_preds, axis=0)
+    
     else:
-        raise ValueError("Mode isn't supported")
+        raise ValueError("using too much model")
     
     return y_preds
 
@@ -66,7 +47,7 @@ def train_model(X, y, seed=42):
     df_model = pd.DataFrame(columns=[*param_key, *[f'model_{i}' for i in range(5)], *[f'model_{i}_auc' for i in range(5)], 'average_auc'])
 
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-    for param in param_list[:5]:
+    for param in param_list[:]:
         models = []
         ctr = 0
         auc_scores = []
@@ -116,9 +97,9 @@ if __name__ == "__main__":
 
 
     ''' Preprocess Data'''
-    train = pd.read_csv('./ISIC/train.csv')
-    test = pd.read_csv('./ISIC/test.csv')
-    sub = pd.read_csv('./ISIC/sample_submission.csv')
+    train = pd.read_csv('E:\ISIC/train.csv')
+    test = pd.read_csv('E:\ISIC/test.csv')
+    sub = pd.read_csv('E:\ISIC/sample_submission.csv')
     for col in ['sex', 'anatom_site_general_challenge']:
         encoder = LabelEncoder()
         train[col].fillna('unknown', inplace = True)
@@ -174,17 +155,19 @@ if __name__ == "__main__":
         print(len(df_model))
     
 
-    y_test_pred = predict(test, df_model, mode='best_mean')
+
+    ''' Test Model '''
+
+    y_test_pred = predict(test, df_model)
     test['target'] = y_test_pred
     sub.target = test.target
     sub.to_csv('./submission.csv',index=False)
-    print(sub.head())
+    
     
     print(np.argmax(y_test_pred), y_test_pred[np.argmax(y_test_pred)])
-    print(test.shape)
-    a = test.iloc[0]
+    a = test.iloc[[np.argmax(y_test_pred)]]
     print(a)
-    # print(test.loc(np.argmax(y_test_pred)))
+    del a['target']
     lgb.plot_importance(df_model.loc[0, 'model_0'], ignore_zero=False, figsize=(16,9))
     plt.savefig('./importance_feature.png')
 
@@ -193,17 +176,14 @@ if __name__ == "__main__":
     P_age_approx = 70
     P_anatom_site_general_challenge = 5
 
+    import json
+    with open('./input_data/person.json', 'r') as f:
+        jdata = json.load(f)
 
-    persons = {'sex':  [P_sex],
-            'age_approx':  [P_age_approx],
-            'anatom_site_general_challenge':  [P_anatom_site_general_challenge],
-            'age_min':  [P_age_approx],
-            'age_max':  [P_age_approx],
-            'age_span':  [0]}
-    select = pd.DataFrame(persons)
+    select = pd.DataFrame(jdata)
     print(select)
-    y_test_pred = predict(select, df_model, mode='best_mean')
-    print(y_test_pred)
+    select_pred = predict(a, df_model, num_model=10)
+    print(select_pred)
 
     
     
